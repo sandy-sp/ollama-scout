@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Real benchmark timing via `ollama run` for pulled models (`is_real` flag on estimates)
+- "Source" column in benchmark table: "⚡ Real" for measured timing, "~ Est." for formula
+- Model comparison mode: `--compare model1 model2` for side-by-side analysis
+- Interactive comparison prompt after recommendations
+- XDG-compliant config paths (Linux: `~/.config/`, macOS: `~/Library/Application Support/`, Windows: `%APPDATA%`)
+- Automatic migration of legacy `~/.ollama-scout.json` to new config location
+
+## [0.1.1] - 2026-02-18
+
+### Added
+
+- Interactive guided mode (`ollama-scout` with no args, or `-i` flag)
+- 10-step session: hardware scan → use case → results → benchmark → export → pull
+
+### Fixed
+
+- Table columns no longer truncate (Fit, Mode, Note columns)
+- CPU-only notes now show time estimates for 200-token response
+- Graceful Ctrl+C handling in interactive mode
+
 ## [0.1.0] - 2026-02-17
 
 ### Added

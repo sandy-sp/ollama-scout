@@ -42,6 +42,16 @@
   mistral           7b       Q4_K_M   4.1GB   Excellent  GPU      Available
 ```
 
+## Interactive Mode
+
+Just run `ollama-scout` with no arguments for a guided experience:
+
+```bash
+ollama-scout
+```
+
+The interactive mode walks you through hardware scanning, use case selection, and model recommendations step by step — no flags needed. You can also launch it explicitly with `ollama-scout -i`.
+
 ## How It Works
 
 ```
@@ -71,6 +81,8 @@ Requires **Python 3.10+** and [Ollama](https://ollama.com/) installed.
 ## Usage
 
 ```bash
+ollama-scout                                # Interactive guided mode (default)
+ollama-scout -i                             # Explicit interactive mode
 python main.py                              # Full scan, grouped by use case
 python main.py --use-case coding            # Filter by use case
 python main.py --flat                       # Flat list instead of grouped
@@ -90,6 +102,7 @@ See [docs/USAGE.md](docs/USAGE.md) for the full guide with platform-specific not
 
 ## Features
 
+- **Interactive mode** — Guided step-by-step session when run with no arguments
 - **Hardware detection** — GPU VRAM, CPU, RAM on Windows, macOS, Linux
 - **Apple Silicon support** — Treats unified memory as VRAM for accurate scoring
 - **Live + offline modes** — Fetches from Ollama API or uses built-in fallback list

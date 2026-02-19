@@ -93,14 +93,14 @@ def print_recommendations_grouped(
             header_style="bold dim white",
             padding=(0, 1),
         )
-        table.add_column("Model", style="bold white", min_width=20)
-        table.add_column("Tag / Variant", style="dim white")
+        table.add_column("Model", style="bold white", min_width=16)
+        table.add_column("Tag", style="dim white")
         table.add_column("Quant", justify="center")
         table.add_column("Size", justify="right")
         table.add_column("Params", justify="center")
-        table.add_column("Fit", justify="center")
-        table.add_column("Mode", justify="center")
-        table.add_column("Note", style="dim", max_width=35)
+        table.add_column("Fit", justify="center", min_width=9)
+        table.add_column("Mode", justify="center", min_width=8)
+        table.add_column("Note", style="dim", min_width=20, overflow="fold")
         table.add_column("Status", justify="center")
 
         for rec in recs:
@@ -139,8 +139,8 @@ def print_recommendations_flat(recs: list[Recommendation]):
     table.add_column("Quant", justify="center")
     table.add_column("Size", justify="right")
     table.add_column("Use Cases", max_width=22)
-    table.add_column("Fit", justify="center")
-    table.add_column("Mode", justify="center")
+    table.add_column("Fit", justify="center", min_width=9)
+    table.add_column("Mode", justify="center", min_width=8)
     table.add_column("Status", justify="center")
 
     for i, rec in enumerate(recs, 1):
@@ -183,24 +183,40 @@ def print_benchmark(estimates: list[BenchmarkEstimate]):
     )
     table.add_column("Model", style="bold white", min_width=25)
     table.add_column("Mode", justify="center")
-    table.add_column("Est. Speed", justify="right")
+    table.add_column("Speed", justify="right")
     table.add_column("Rating", justify="center")
+    table.add_column("Source", justify="center")
 
     for est in estimates:
         mode_style = RUN_MODE_COLORS.get(est.run_mode, "white")
         style, label = RATING_STYLES.get(est.rating, ("white", est.rating))
+        source = "[green]⚡ Real[/green]" if est.is_real else "[dim]~ Est.[/dim]"
         table.add_row(
             est.model_name,
             f"[{mode_style}]{est.run_mode}[/{mode_style}]",
             f"{est.tokens_per_sec} t/s",
             f"[{style}]{label}[/{style}]",
+            source,
         )
 
     console.print(table)
-    console.print(
-        "[dim]Estimates only. Actual performance depends on context length, "
-        "system load, and model architecture.[/dim]"
-    )
+    has_real = any(est.is_real for est in estimates)
+    has_est = any(not est.is_real for est in estimates)
+    if has_real and has_est:
+        console.print(
+            "[dim]Real timings measured on your hardware. "
+            "Estimates shown for models not yet pulled.[/dim]"
+        )
+    elif has_real:
+        console.print(
+            "[dim]Timings measured on your hardware. Actual performance varies "
+            "with context length and system load.[/dim]"
+        )
+    else:
+        console.print(
+            "[dim]Estimates only. Actual performance depends on context length, "
+            "system load, and model architecture.[/dim]"
+        )
     console.print()
 
 
@@ -234,9 +250,9 @@ def print_model_detail(model, variants_with_scores, pulled_models, hw):
     table.add_column("Size", justify="right")
     table.add_column("Params", justify="center")
     table.add_column("Quant", justify="center")
-    table.add_column("Fit", justify="center")
-    table.add_column("Mode", justify="center")
-    table.add_column("Note", style="dim", max_width=40)
+    table.add_column("Fit", justify="center", min_width=9)
+    table.add_column("Mode", justify="center", min_width=8)
+    table.add_column("Note", style="dim", min_width=20, overflow="fold")
 
     best_variant = None
     best_score = -1
@@ -274,6 +290,165 @@ def print_model_detail(model, variants_with_scores, pulled_models, hw):
     else:
         console.print("[dim]No compatible variants found for your hardware.[/dim]")
 
+    console.print()
+
+
+def print_model_comparison(detail1, detail2):
+    """Print a side-by-side comparison of two models.
+
+    Each detail is a dict with keys:
+        name, description, tag, size_gb, param_size, quantization,
+        fit_label, run_mode, score, est_tps, pulled
+    Pass None for a detail if the model was not found.
+    """
+    FIT_RANK = {"Excellent": 3, "Good": 2, "Possible": 1, "Too Large": 0, None: -1}
+    MODE_RANK = {"GPU": 3, "CPU+GPU": 2, "CPU": 1, "N/A": 0, None: -1}
+
+    def _val(d, key, default="N/A"):
+        if d is None:
+            return default
+        return d.get(key, default)
+
+    def _highlight(val1, val2, lower_is_better=False):
+        """Return (style1, style2) — green for winner, white for loser."""
+        if val1 is None or val2 is None:
+            return "white", "white"
+        if val1 == val2:
+            return "white", "white"
+        if lower_is_better:
+            winner = 1 if val1 < val2 else 2
+        else:
+            winner = 1 if val1 > val2 else 2
+        return (
+            ("green" if winner == 1 else "white"),
+            ("green" if winner == 2 else "white"),
+        )
+
+    name1 = _val(detail1, "name", "Not found")
+    name2 = _val(detail2, "name", "Not found")
+
+    table = Table(
+        title="[bold cyan]Model Comparison[/bold cyan]",
+        box=box.ROUNDED,
+        border_style="cyan",
+        show_header=True,
+        header_style="bold white",
+        padding=(0, 1),
+    )
+    table.add_column("", style="dim white", min_width=14)
+    table.add_column(name1, style="white", min_width=20)
+    table.add_column(name2, style="white", min_width=20)
+
+    # Description
+    table.add_row(
+        "Description",
+        _val(detail1, "description"),
+        _val(detail2, "description"),
+    )
+
+    # Best variant
+    table.add_row(
+        "Best Variant",
+        _val(detail1, "tag"),
+        _val(detail2, "tag"),
+    )
+
+    # Size (lower is better)
+    s1 = detail1.get("size_gb") if detail1 else None
+    s2 = detail2.get("size_gb") if detail2 else None
+    c1, c2 = _highlight(s1, s2, lower_is_better=True)
+    table.add_row(
+        "Size",
+        f"[{c1}]{s1}GB[/{c1}]" if s1 else "N/A",
+        f"[{c2}]{s2}GB[/{c2}]" if s2 else "N/A",
+    )
+
+    # Params
+    table.add_row(
+        "Parameters",
+        _val(detail1, "param_size"),
+        _val(detail2, "param_size"),
+    )
+
+    # Quantization
+    table.add_row(
+        "Quantization",
+        _val(detail1, "quantization"),
+        _val(detail2, "quantization"),
+    )
+
+    # Fit (higher rank is better)
+    f1 = _val(detail1, "fit_label", None)
+    f2 = _val(detail2, "fit_label", None)
+    c1, c2 = _highlight(FIT_RANK.get(f1, -1), FIT_RANK.get(f2, -1))
+    fit_style1 = FIT_COLORS.get(f1, "white") if f1 else "dim"
+    fit_style2 = FIT_COLORS.get(f2, "white") if f2 else "dim"
+    table.add_row(
+        "Fit",
+        f"[{fit_style1}]{f1 or 'N/A'}[/{fit_style1}]",
+        f"[{fit_style2}]{f2 or 'N/A'}[/{fit_style2}]",
+    )
+
+    # Run Mode (higher rank is better)
+    m1 = _val(detail1, "run_mode", None)
+    m2 = _val(detail2, "run_mode", None)
+    c1, c2 = _highlight(MODE_RANK.get(m1, -1), MODE_RANK.get(m2, -1))
+    table.add_row(
+        "Run Mode",
+        f"[{c1}]{m1 or 'N/A'}[/{c1}]",
+        f"[{c2}]{m2 or 'N/A'}[/{c2}]",
+    )
+
+    # Est. Speed (higher is better)
+    t1 = detail1.get("est_tps") if detail1 else None
+    t2 = detail2.get("est_tps") if detail2 else None
+    c1, c2 = _highlight(t1, t2)
+    table.add_row(
+        "Est. Speed",
+        f"[{c1}]{t1} t/s[/{c1}]" if t1 else "N/A",
+        f"[{c2}]{t2} t/s[/{c2}]" if t2 else "N/A",
+    )
+
+    # Status
+    table.add_row(
+        "Status",
+        "[green]Pulled[/green]" if detail1 and detail1.get("pulled") else "[dim]Not pulled[/dim]",
+        "[green]Pulled[/green]" if detail2 and detail2.get("pulled") else "[dim]Not pulled[/dim]",
+    )
+
+    console.print(table)
+    console.print()
+
+    # Verdict
+    score1 = detail1.get("score", -1) if detail1 else -1
+    score2 = detail2.get("score", -1) if detail2 else -1
+    if detail1 is None and detail2 is None:
+        verdict = "Neither model was found."
+    elif detail1 is None:
+        verdict = f"[bold]{name2}[/bold] wins — {name1} was not found."
+    elif detail2 is None:
+        verdict = f"[bold]{name1}[/bold] wins — {name2} was not found."
+    elif score1 > score2:
+        verdict = (
+            f"[bold green]{name1}[/bold green] is the better fit "
+            f"for your hardware ({_val(detail1, 'fit_label')} / "
+            f"{_val(detail1, 'run_mode')})."
+        )
+    elif score2 > score1:
+        verdict = (
+            f"[bold green]{name2}[/bold green] is the better fit "
+            f"for your hardware ({_val(detail2, 'fit_label')} / "
+            f"{_val(detail2, 'run_mode')})."
+        )
+    else:
+        verdict = "Both models are equally matched for your hardware."
+
+    console.print(Panel(
+        verdict,
+        title="[dim]Verdict[/dim]",
+        border_style="green",
+        padding=(0, 2),
+    ))
     console.print()
 
 

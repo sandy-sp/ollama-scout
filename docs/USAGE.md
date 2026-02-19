@@ -12,6 +12,30 @@ pip install -r requirements.txt
 - Python 3.10+
 - [Ollama](https://ollama.com/) installed (for model pulling and local model detection)
 
+## Interactive Mode
+
+When you run `ollama-scout` with no arguments (or with `-i`), it launches an interactive guided session:
+
+```bash
+ollama-scout        # launches interactive mode
+ollama-scout -i     # same thing, explicit flag
+```
+
+The session walks you through these steps:
+
+1. **Welcome** — Press Enter to begin scanning
+2. **Hardware scan** — Detects GPU, CPU, and RAM automatically
+3. **Connection check** — Choose to fetch live models or use the built-in offline list
+4. **Use case selection** — Pick from All, Coding, Reasoning, or Chat
+5. **Results count** — Choose how many recommendations to show (5/10/15/20)
+6. **Recommendations** — View the results table with fit labels and run modes
+7. **Benchmark** — Optionally view estimated inference speeds
+8. **Export** — Optionally save results as a Markdown report
+9. **Pull** — Optionally pull a recommended model directly
+10. **Exit** — Done! Tips for CLI flags are shown
+
+Interactive mode is recommended for new users. Power users can use CLI flags to skip the prompts.
+
 ## CLI Flags
 
 ### Basic scan

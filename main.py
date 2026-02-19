@@ -19,7 +19,7 @@ import argparse
 import sys
 
 from scout import __version__
-from scout.benchmark import get_benchmark_estimates
+from scout.benchmark import benchmark_pulled_models, get_benchmark_estimates
 from scout.config import DEFAULT_CONFIG, load_config, print_config, save_config
 from scout.display import (
     console,
@@ -30,6 +30,7 @@ from scout.display import (
     print_hardware_summary,
     print_info,
     print_legend,
+    print_model_comparison,
     print_model_detail,
     print_recommendations_flat,
     print_recommendations_grouped,
@@ -53,6 +54,11 @@ def parse_args():
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
+        "-i", "--interactive",
+        action="store_true",
+        help="Launch interactive guided mode (default when no args)",
     )
     parser.add_argument(
         "--use-case",
@@ -116,6 +122,12 @@ def parse_args():
         help="Show detailed info for a specific model (e.g. deepseek-coder)",
     )
     parser.add_argument(
+        "--compare",
+        nargs=2,
+        metavar=("MODEL1", "MODEL2"),
+        help="Compare two models side by side (e.g. --compare llama3.2 mistral)",
+    )
+    parser.add_argument(
         "--config",
         action="store_true",
         help="Print current configuration and exit",
@@ -150,6 +162,12 @@ def _apply_config(args):
 
 def main():
     args = parse_args()
+
+    # --- Interactive mode (no arguments or -i/--interactive) ---
+    if len(sys.argv) == 1 or args.interactive:
+        from scout.interactive import InteractiveSession
+        InteractiveSession().run()
+        return
 
     # --- Config commands ---
     if args.config:
@@ -265,6 +283,63 @@ def main():
         print_footer()
         return
 
+    # --- Comparison mode ---
+    if args.compare:
+        def _find_model(name):
+            target = name.lower()
+            matched = [m for m in models if m.name.lower() == target]
+            if not matched:
+                matched = [m for m in models if m.name.lower().startswith(target)]
+            return matched[0] if matched else None
+
+        def _model_detail(name):
+            model = _find_model(name)
+            if model is None:
+                return None
+            best_score, best_variant, best_fit, best_mode = -1, None, None, None
+            best_tps = None
+            for variant in model.tags:
+                score, fit_label, run_mode, note = _score_variant(variant, hw)
+                if score > best_score:
+                    best_score = score
+                    best_variant = variant
+                    best_fit = fit_label
+                    best_mode = run_mode
+            if best_variant:
+                from scout.benchmark import estimate_speed
+                from scout.recommender import Recommendation
+                rec = Recommendation(
+                    model=model, variant=best_variant,
+                    score=best_score, run_mode=best_mode,
+                    fit_label=best_fit,
+                )
+                est = estimate_speed(rec, hw)
+                best_tps = est.tokens_per_sec
+            return {
+                "name": model.name,
+                "description": model.description,
+                "tag": best_variant.tag if best_variant else None,
+                "size_gb": best_variant.size_gb if best_variant else None,
+                "param_size": best_variant.param_size if best_variant else None,
+                "quantization": best_variant.quantization if best_variant else None,
+                "fit_label": best_fit,
+                "run_mode": best_mode,
+                "score": best_score,
+                "est_tps": best_tps,
+                "pulled": model.name in pulled,
+            }
+
+        d1 = _model_detail(args.compare[0])
+        d2 = _model_detail(args.compare[1])
+        if d1 is None:
+            print_error(f"Model '{args.compare[0]}' not found.")
+        if d2 is None:
+            print_error(f"Model '{args.compare[1]}' not found.")
+        console.print()
+        print_model_comparison(d1, d2)
+        print_footer()
+        return
+
     # --- Recommend ---
     recs = get_recommendations(
         models=models,
@@ -292,6 +367,19 @@ def main():
     # --- Benchmark ---
     if args.benchmark:
         estimates = get_benchmark_estimates(recs, hw)
+        if pulled:
+            with spinner("Running real benchmarks on pulled models...") as p:
+                p.add_task("")
+                p.start()
+                real_estimates = benchmark_pulled_models(pulled, hw)
+                p.stop()
+            # Merge: real results replace formula estimates for the same model
+            real_names = {e.model_name.split(":")[0] for e in real_estimates}
+            estimates = [
+                e for e in estimates
+                if e.model_name.split(":")[0] not in real_names
+            ]
+            estimates = real_estimates + estimates
         print_benchmark(estimates)
 
     # --- Export ---

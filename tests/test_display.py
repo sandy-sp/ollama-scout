@@ -10,6 +10,7 @@ from scout.display import (
     print_footer,
     print_hardware_summary,
     print_legend,
+    print_model_comparison,
     print_recommendations_flat,
     print_recommendations_grouped,
 )
@@ -111,3 +112,50 @@ class TestDisplayFunctions:
     def test_print_footer_does_not_raise(self):
         output = _capture(print_footer)
         assert "--help" in output
+
+    def test_print_benchmark_shows_source_column(self):
+        est_real = BenchmarkEstimate(
+            model_name="test:7b", run_mode="GPU",
+            tokens_per_sec=80.0, rating="Fast", is_real=True,
+        )
+        est_formula = BenchmarkEstimate(
+            model_name="other:7b", run_mode="CPU",
+            tokens_per_sec=8.0, rating="Slow", is_real=False,
+        )
+        output = _capture(print_benchmark, [est_real, est_formula])
+        assert "Real" in output
+        assert "Est." in output
+
+
+class TestPrintModelComparison:
+    def test_comparison_with_two_valid_models(self):
+        d1 = {
+            "name": "llama3.2", "description": "A chat model",
+            "tag": "3b", "size_gb": 2.0, "param_size": "3B",
+            "quantization": "Q4_K_M", "fit_label": "Excellent",
+            "run_mode": "GPU", "score": 98, "est_tps": 80.0,
+            "pulled": True,
+        }
+        d2 = {
+            "name": "mistral", "description": "A reasoning model",
+            "tag": "7b", "size_gb": 4.1, "param_size": "7B",
+            "quantization": "Q4_K_M", "fit_label": "Good",
+            "run_mode": "CPU+GPU", "score": 60, "est_tps": 35.0,
+            "pulled": False,
+        }
+        output = _capture(print_model_comparison, d1, d2)
+        assert "llama3.2" in output
+        assert "mistral" in output
+        assert "Verdict" in output
+
+    def test_comparison_with_one_missing_model(self):
+        d1 = {
+            "name": "llama3.2", "description": "A chat model",
+            "tag": "3b", "size_gb": 2.0, "param_size": "3B",
+            "quantization": "Q4_K_M", "fit_label": "Excellent",
+            "run_mode": "GPU", "score": 98, "est_tps": 80.0,
+            "pulled": False,
+        }
+        output = _capture(print_model_comparison, d1, None)
+        assert "llama3.2" in output
+        assert "Not found" in output

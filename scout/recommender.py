@@ -66,7 +66,16 @@ def _score_variant(
 
     if usable_ram >= size:
         score = 40 - int(size * 2)
-        return max(score, 5), "Possible", "CPU", "CPU-only, may be slow"
+        tps = max((hw.cpu_threads / size) * 4, 0.1)
+        time_sec = round(200 / tps)
+        if time_sec <= 10:
+            note = "CPU-only (fast enough)"
+        elif time_sec > 60:
+            minutes = round(time_sec / 60)
+            note = f"CPU-only (~{minutes}m, consider a smaller model)"
+        else:
+            note = f"CPU-only (~{time_sec}s for 200 tokens)"
+        return max(score, 5), "Possible", "CPU", note
 
     return (
         -1, "Too Large", "N/A",

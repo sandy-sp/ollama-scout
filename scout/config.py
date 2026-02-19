@@ -1,10 +1,31 @@
 """
-config.py - Persistent configuration via ~/.ollama-scout.json.
+config.py - Persistent configuration with platform-aware config paths.
 """
 import json
 import os
+import platform
+import shutil
 
-CONFIG_PATH = os.path.expanduser("~/.ollama-scout.json")
+LEGACY_CONFIG_PATH = os.path.expanduser("~/.ollama-scout.json")
+
+
+def _get_config_path() -> str:
+    system = platform.system()
+    if system == "Windows":
+        base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        return os.path.join(base, "ollama-scout", "config.json")
+    elif system == "Darwin":
+        return os.path.expanduser(
+            "~/Library/Application Support/ollama-scout/config.json"
+        )
+    else:  # Linux and others
+        xdg = os.environ.get(
+            "XDG_CONFIG_HOME", os.path.expanduser("~/.config")
+        )
+        return os.path.join(xdg, "ollama-scout", "config.json")
+
+
+CONFIG_PATH = _get_config_path()
 
 DEFAULT_CONFIG: dict = {
     "default_use_case": "all",
@@ -16,8 +37,31 @@ DEFAULT_CONFIG: dict = {
 }
 
 
+def _migrate_legacy_config() -> bool:
+    """Migrate legacy ~/.ollama-scout.json to new XDG path if needed.
+
+    Returns True if migration occurred.
+    """
+    if not os.path.exists(LEGACY_CONFIG_PATH):
+        return False
+    if os.path.exists(CONFIG_PATH):
+        return False
+    try:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        shutil.copy2(LEGACY_CONFIG_PATH, CONFIG_PATH)
+        os.remove(LEGACY_CONFIG_PATH)
+        return True
+    except OSError:
+        return False
+
+
 def load_config() -> dict:
     """Load config from disk, merging with defaults. Creates file on first run."""
+    migrated = _migrate_legacy_config()
+    if migrated:
+        from .display import print_info
+        print_info(f"Config migrated to [bold]{CONFIG_PATH}[/bold]")
+
     cfg = dict(DEFAULT_CONFIG)
     if os.path.exists(CONFIG_PATH):
         try:
@@ -37,6 +81,7 @@ def load_config() -> dict:
 def save_config(cfg: dict) -> None:
     """Write config to disk."""
     try:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
             f.write("\n")

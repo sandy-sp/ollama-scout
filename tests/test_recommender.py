@@ -55,6 +55,37 @@ class TestScoreVariant:
         assert fit == "Too Large"
         assert score < 0
 
+    def test_cpu_only_note_has_time_estimate(self):
+        hw = _make_hw(vram_gb=0, ram_gb=32.0)
+        variant = ModelVariant(tag="7b", size_gb=4.0, quantization="Q4_K_M", param_size="7B")
+        score, fit, mode, note = _score_variant(variant, hw)
+        assert fit == "Possible"
+        assert mode == "CPU"
+        assert "CPU-only" in note
+        # Should have a time estimate, not the old generic message
+        assert "may be slow" not in note
+
+    def test_cpu_only_fast_enough_for_tiny_model(self):
+        hw_big = HardwareProfile(
+            os="Linux", cpu_name="Test", cpu_cores=16,
+            cpu_threads=32, ram_gb=32.0, gpus=[],
+        )
+        variant = ModelVariant(tag="1b", size_gb=0.7, quantization="Q4_K_M", param_size="1B")
+        score, fit, mode, note = _score_variant(variant, hw_big)
+        assert "fast enough" in note
+
+    def test_cpu_only_large_model_suggests_smaller(self):
+        hw = HardwareProfile(
+            os="Linux", cpu_name="Test", cpu_cores=2,
+            cpu_threads=4, ram_gb=32.0, gpus=[],
+        )
+        variant = ModelVariant(
+            tag="13b", size_gb=8.0,
+            quantization="Q4_K_M", param_size="13B",
+        )
+        score, fit, mode, note = _score_variant(variant, hw)
+        assert "consider a smaller model" in note
+
 
 class TestGetRecommendations:
     def test_excludes_too_large_models(self):
