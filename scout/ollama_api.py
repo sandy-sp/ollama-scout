@@ -1,10 +1,13 @@
 """
 ollama_api.py - Fetch available models from Ollama library + detect locally pulled models.
 """
+import json
+import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 import requests
 
@@ -251,6 +254,82 @@ def _generate_default_variants(model_name: str) -> list[ModelVariant]:
     return [ModelVariant(tag="latest", size_gb=size, quantization="Q4_0", param_size=param)]
 
 
+def _group_models(models: list[OllamaModel]) -> list[OllamaModel]:
+    """Merge models with the same base name into one model with multiple variants.
+
+    Deduplicates variants with the same tag.
+    """
+    by_name: dict[str, OllamaModel] = {}
+    for model in models:
+        if model.name in by_name:
+            existing = by_name[model.name]
+            existing_tags = {v.tag for v in existing.tags}
+            for variant in model.tags:
+                if variant.tag not in existing_tags:
+                    existing.tags.append(variant)
+                    existing_tags.add(variant.tag)
+            # Merge use cases
+            for uc in model.use_cases:
+                if uc not in existing.use_cases:
+                    existing.use_cases.append(uc)
+            # Keep longer description
+            if len(model.description) > len(existing.description):
+                existing.description = model.description
+        else:
+            by_name[model.name] = OllamaModel(
+                name=model.name,
+                description=model.description,
+                tags=list(model.tags),
+                use_cases=list(model.use_cases),
+                pulled=model.pulled,
+            )
+    return list(by_name.values())
+
+
+CACHE_MAX_AGE_HOURS = 24
+
+
+def _get_cache_path() -> str:
+    from .config import CONFIG_PATH
+    return os.path.join(os.path.dirname(CONFIG_PATH), "models_cache.json")
+
+
+def _load_cache() -> list[dict] | None:
+    """Load cached API data if fresh (< 24h old). Returns raw items or None."""
+    path = _get_cache_path()
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cache = json.load(f)
+        fetched_at = datetime.fromisoformat(cache["fetched_at"])
+        age_hours = (datetime.now(timezone.utc) - fetched_at).total_seconds() / 3600
+        if age_hours > CACHE_MAX_AGE_HOURS:
+            return None
+        return cache.get("models", [])
+    except (json.JSONDecodeError, KeyError, OSError, ValueError):
+        return None
+
+
+def _save_cache(raw_items: list[dict]) -> None:
+    """Save raw API data to cache."""
+    path = _get_cache_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "models": raw_items,
+            }, f)
+    except OSError:
+        pass
+
+
+def is_cache_stale() -> bool:
+    """Check if the model cache is missing or older than 24 hours."""
+    return _load_cache() is None
+
+
 def get_fallback_models() -> list[OllamaModel]:
     """Return hardcoded fallback models for offline mode."""
     models = []
@@ -268,29 +347,47 @@ def get_fallback_models() -> list[OllamaModel]:
             tags=[variant],
             use_cases=_infer_use_cases(entry["name"]),
         ))
-    return models
+    return _group_models(models)
 
 
-def fetch_ollama_models(limit: int = 50) -> list[OllamaModel]:
-    """Fetch models from the Ollama library API with robust gap-filling."""
-    try:
-        response = requests.get(
-            OLLAMA_API_URL,
-            timeout=REQUEST_TIMEOUT,
-            headers={"Accept": "application/json"},
-        )
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as e:
-        raise ConnectionError(
-            f"Failed to fetch Ollama model list: {e}\n"
-            "  Hint: use --offline to skip the live fetch and use built-in fallback models."
-        )
+def fetch_ollama_models(limit: int = 50, force_refresh: bool = False) -> list[OllamaModel]:
+    """Fetch models from the Ollama library API with robust gap-filling.
+
+    Uses a local cache (24h TTL). Set force_refresh=True to bypass cache.
+    Falls back to cache on connection error, then to FALLBACK_MODELS.
+    """
+    # Try cache first (unless forcing refresh)
+    cached_items = None if force_refresh else _load_cache()
+
+    if cached_items is not None:
+        items = cached_items
+    else:
+        try:
+            response = requests.get(
+                OLLAMA_API_URL,
+                timeout=REQUEST_TIMEOUT,
+                headers={"Accept": "application/json"},
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as e:
+            # Fall back to stale cache if available
+            stale = _load_cache() if force_refresh else None
+            if stale is not None:
+                items = stale
+            else:
+                raise ConnectionError(
+                    f"Failed to fetch Ollama model list: {e}\n"
+                    "  Hint: use --offline to skip the live fetch "
+                    "and use built-in fallback models."
+                )
+        else:
+            # The /api/tags endpoint returns {"models": [...]}
+            items = data.get("models", []) if isinstance(data, dict) else data
+            if items:
+                _save_cache(items)
 
     models = []
-
-    # The /api/tags endpoint returns {"models": [...]}
-    items = data.get("models", []) if isinstance(data, dict) else data
 
     if not items:
         raise ConnectionError(
@@ -342,7 +439,7 @@ def fetch_ollama_models(limit: int = 50) -> list[OllamaModel]:
             use_cases=use_cases,
         ))
 
-    return models[:limit]
+    return _group_models(models)[:limit]
 
 
 def get_pulled_models() -> list[str]:

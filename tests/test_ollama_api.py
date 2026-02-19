@@ -2,8 +2,10 @@
 from unittest.mock import MagicMock, patch
 
 from scout.ollama_api import (
-    FALLBACK_MODELS,
+    ModelVariant,
+    OllamaModel,
     _generate_description,
+    _group_models,
     _infer_use_cases,
     _parse_param_size,
     _parse_param_size_from_name_and_tag,
@@ -11,6 +13,7 @@ from scout.ollama_api import (
     fetch_ollama_models,
     get_fallback_models,
     get_pulled_models,
+    is_cache_stale,
 )
 
 
@@ -91,10 +94,58 @@ class TestGenerateDescription:
         assert "xyz123" in desc
 
 
+class TestGroupModels:
+    def test_merges_same_name_into_one(self):
+        m1 = OllamaModel(
+            name="llama3.2", description="Model A",
+            tags=[ModelVariant(tag="3b", size_gb=2.0, quantization="Q4_K_M", param_size="3B")],
+            use_cases=["chat"],
+        )
+        m2 = OllamaModel(
+            name="llama3.2", description="Model A longer desc",
+            tags=[ModelVariant(tag="1b", size_gb=0.7, quantization="Q4_K_M", param_size="1B")],
+            use_cases=["chat"],
+        )
+        result = _group_models([m1, m2])
+        assert len(result) == 1
+        assert result[0].name == "llama3.2"
+        assert len(result[0].tags) == 2
+        tags = {v.tag for v in result[0].tags}
+        assert tags == {"3b", "1b"}
+
+    def test_merged_model_has_correct_use_cases(self):
+        m1 = OllamaModel(
+            name="phi4", description="Phi-4",
+            tags=[ModelVariant(tag="14b", size_gb=8.4, quantization="Q4_K_M", param_size="14B")],
+            use_cases=["reasoning"],
+        )
+        m2 = OllamaModel(
+            name="phi4", description="Phi-4",
+            tags=[ModelVariant(tag="14b-q8", size_gb=14.0, quantization="Q8_0", param_size="14B")],
+            use_cases=["chat"],
+        )
+        result = _group_models([m1, m2])
+        assert "reasoning" in result[0].use_cases
+        assert "chat" in result[0].use_cases
+
+    def test_deduplicates_same_tag(self):
+        v = ModelVariant(tag="7b", size_gb=4.0, quantization="Q4_K_M", param_size="7B")
+        m1 = OllamaModel(name="test", description="A", tags=[v], use_cases=["chat"])
+        m2 = OllamaModel(name="test", description="A", tags=[v], use_cases=["chat"])
+        result = _group_models([m1, m2])
+        assert len(result) == 1
+        assert len(result[0].tags) == 1
+
+
 class TestGetFallbackModels:
-    def test_returns_correct_count(self):
+    def test_returns_grouped_models(self):
         models = get_fallback_models()
-        assert len(models) == len(FALLBACK_MODELS)
+        # FALLBACK_MODELS has 15 entries but llama3.2 appears twice (1B, 3B)
+        # After grouping, llama3.2 should have 2 variants in one model
+        names = [m.name for m in models]
+        assert names.count("llama3.2") == 1
+        llama = [m for m in models if m.name == "llama3.2"][0]
+        assert len(llama.tags) == 2
 
     def test_models_have_variants(self):
         models = get_fallback_models()
@@ -109,8 +160,10 @@ class TestGetFallbackModels:
 
 
 class TestFetchOllamaModels:
+    @patch("scout.ollama_api._save_cache")
+    @patch("scout.ollama_api._load_cache", return_value=None)
     @patch("scout.ollama_api.requests.get")
-    def test_parses_api_response(self, mock_get):
+    def test_parses_api_response(self, mock_get, mock_cache, mock_save):
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "models": [
@@ -138,9 +191,12 @@ class TestFetchOllamaModels:
         assert models[0].tags[0].tag == "3b"
         assert models[1].name == "mistral"
         assert models[1].tags[0].param_size == "7B"
+        mock_save.assert_called_once()
 
+    @patch("scout.ollama_api._save_cache")
+    @patch("scout.ollama_api._load_cache", return_value=None)
     @patch("scout.ollama_api.requests.get")
-    def test_fills_gaps_when_details_empty(self, mock_get):
+    def test_fills_gaps_when_details_empty(self, mock_get, mock_cache, mock_save):
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "models": [
@@ -156,8 +212,10 @@ class TestFetchOllamaModels:
         assert m.tags[0].param_size == "6.7B"  # parsed from tag
         assert m.tags[0].quantization  # inferred
 
+    @patch("scout.ollama_api._save_cache")
+    @patch("scout.ollama_api._load_cache", return_value=None)
     @patch("scout.ollama_api.requests.get")
-    def test_raises_on_empty_response(self, mock_get):
+    def test_raises_on_empty_response(self, mock_get, mock_cache, mock_save):
         mock_response = MagicMock()
         mock_response.json.return_value = {"models": []}
         mock_response.raise_for_status = MagicMock()
@@ -168,6 +226,22 @@ class TestFetchOllamaModels:
             assert False, "Should have raised ConnectionError"
         except ConnectionError:
             pass
+
+    @patch("scout.ollama_api._save_cache")
+    @patch("scout.ollama_api.requests.get")
+    def test_uses_fresh_cache_without_api_call(self, mock_get, mock_save):
+        cached = [
+            {"name": "llama3.2:3b", "size": 2147483648, "details": {}},
+        ]
+        with patch("scout.ollama_api._load_cache", return_value=cached):
+            models = fetch_ollama_models()
+        mock_get.assert_not_called()
+        assert len(models) == 1
+        assert models[0].name == "llama3.2"
+
+    @patch("scout.ollama_api._load_cache", return_value=None)
+    def test_stale_cache_reports_stale(self, mock_cache):
+        assert is_cache_stale() is True
 
 
 class TestGetPulledModels:

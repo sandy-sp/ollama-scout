@@ -1,5 +1,6 @@
 """Tests for scout.display module."""
 from io import StringIO
+from unittest.mock import patch
 
 from rich.console import Console
 
@@ -13,6 +14,8 @@ from scout.display import (
     print_model_comparison,
     print_recommendations_flat,
     print_recommendations_grouped,
+    prompt_export,
+    prompt_pull,
 )
 from scout.hardware import GPUInfo, HardwareProfile
 from scout.ollama_api import ModelVariant, OllamaModel
@@ -159,3 +162,18 @@ class TestPrintModelComparison:
         output = _capture(print_model_comparison, d1, None)
         assert "llama3.2" in output
         assert "Not found" in output
+
+
+class TestEOFErrorHandling:
+    def test_prompt_export_returns_false_on_eof(self):
+        with patch.object(Console, "input", side_effect=EOFError), \
+             patch.object(Console, "print"):
+            result = prompt_export()
+            assert result is False
+
+    def test_prompt_pull_returns_none_on_eof(self):
+        rec = _make_rec()
+        with patch.object(Console, "input", side_effect=EOFError), \
+             patch.object(Console, "print"):
+            result = prompt_pull([rec])
+            assert result is None

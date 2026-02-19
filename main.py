@@ -122,6 +122,11 @@ def parse_args():
         help="Show detailed info for a specific model (e.g. deepseek-coder)",
     )
     parser.add_argument(
+        "--update-models",
+        action="store_true",
+        help="Force-refresh the model list from Ollama API and update local cache",
+    )
+    parser.add_argument(
         "--compare",
         nargs=2,
         metavar=("MODEL1", "MODEL2"),
@@ -196,6 +201,22 @@ def main():
         cfg[key] = value
         save_config(cfg)
         print_success(f"Config updated: {key} = {value!r}")
+        return
+
+    # --- Update models cache ---
+    if args.update_models:
+        print_banner()
+        with spinner("Fetching latest models from Ollama API...") as p:
+            p.add_task("")
+            p.start()
+            try:
+                models = fetch_ollama_models(limit=100, force_refresh=True)
+            except ConnectionError as e:
+                p.stop()
+                print_error(str(e))
+                sys.exit(1)
+            p.stop()
+        print_success(f"Model list updated. {len(models)} models cached.")
         return
 
     cfg = _apply_config(args)

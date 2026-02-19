@@ -7,14 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-18
+
 ### Added
 
-- Real benchmark timing via `ollama run` for pulled models (`is_real` flag on estimates)
-- "Source" column in benchmark table: "⚡ Real" for measured timing, "~ Est." for formula
-- Model comparison mode: `--compare model1 model2` for side-by-side analysis
+- Multi-GPU support: models scored across combined VRAM with new "Multi-GPU" run mode
+- Real benchmark timing via `ollama run` for pulled models with "Source" column (⚡ Real / ~ Est.)
+- Model comparison mode: `--compare model1 model2` for side-by-side analysis with verdict
 - Interactive comparison prompt after recommendations
+- Smarter model deduplication: same-name models merged with all variants
+- Model list caching (24h TTL) with `--update-models` to force-refresh
 - XDG-compliant config paths (Linux: `~/.config/`, macOS: `~/Library/Application Support/`, Windows: `%APPDATA%`)
 - Automatic migration of legacy `~/.ollama-scout.json` to new config location
+
+### Fixed
+
+- EOFError when stdout is piped or stdin is closed (`prompt_export()`, `prompt_pull()`)
 
 ## [0.1.1] - 2026-02-18
 

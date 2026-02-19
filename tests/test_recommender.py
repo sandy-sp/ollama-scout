@@ -87,6 +87,45 @@ class TestScoreVariant:
         assert "consider a smaller model" in note
 
 
+class TestMultiGPU:
+    def test_multi_gpu_fits_across_two_gpus(self):
+        hw = HardwareProfile(
+            os="Linux", cpu_name="Test", cpu_cores=8,
+            cpu_threads=16, ram_gb=32.0,
+            gpus=[
+                GPUInfo(name="GPU 0", vram_mb=8 * 1024),
+                GPUInfo(name="GPU 1", vram_mb=8 * 1024),
+            ],
+        )
+        # 12GB model: doesn't fit in single 8GB GPU, fits across 16GB combined
+        variant = ModelVariant(
+            tag="13b", size_gb=12.0,
+            quantization="Q4_K_M", param_size="13B",
+        )
+        score, fit, mode, note = _score_variant(variant, hw)
+        assert fit == "Excellent"
+        assert mode == "Multi-GPU"
+        assert "2 GPUs" in note
+
+    def test_single_gpu_preferred_when_it_fits(self):
+        hw = HardwareProfile(
+            os="Linux", cpu_name="Test", cpu_cores=8,
+            cpu_threads=16, ram_gb=32.0,
+            gpus=[
+                GPUInfo(name="GPU 0", vram_mb=10 * 1024),
+                GPUInfo(name="GPU 1", vram_mb=10 * 1024),
+            ],
+        )
+        # 4GB model fits in single 10GB GPU — should prefer GPU, not Multi-GPU
+        variant = ModelVariant(
+            tag="7b", size_gb=4.0,
+            quantization="Q4_K_M", param_size="7B",
+        )
+        score, fit, mode, note = _score_variant(variant, hw)
+        assert fit == "Excellent"
+        assert mode == "GPU"
+
+
 class TestGetRecommendations:
     def test_excludes_too_large_models(self):
         hw = _make_hw(vram_gb=10.0, ram_gb=32.0)

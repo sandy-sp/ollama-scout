@@ -59,6 +59,12 @@ def _score_variant(
         score = 100 - int(size)
         return score, "Excellent", "GPU", f"Fits fully in VRAM ({vram}GB)"
 
+    # Multi-GPU: model doesn't fit in single GPU but fits across all GPUs
+    if hw.multi_gpu and hw.combined_vram_gb >= size:
+        n = len(hw.gpus)
+        score = 100 - int(size)
+        return score, "Excellent", "Multi-GPU", f"Distributed across {n} GPUs"
+
     if vram > 0 and (vram + usable_ram) >= size:
         offload_gb = size - vram
         score = 60 - int(offload_gb * 5)

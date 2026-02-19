@@ -23,6 +23,7 @@ FIT_COLORS = {
 
 RUN_MODE_COLORS = {
     "GPU": "cyan",
+    "Multi-GPU": "bold cyan",
     "CPU+GPU": "yellow",
     "CPU": "dim white",
     "N/A": "red",
@@ -68,6 +69,11 @@ def print_hardware_summary(hw: HardwareProfile):
         for i, gpu in enumerate(hw.gpus):
             label = "GPU" if i == 0 else f"GPU {i+1}"
             table.add_row(label, f"{gpu.name}  [cyan]({gpu.vram_gb} GB VRAM)[/cyan]")
+        if hw.multi_gpu:
+            table.add_row(
+                "Combined VRAM",
+                f"[bold cyan]{hw.combined_vram_gb} GB across {len(hw.gpus)} GPUs[/bold cyan]",
+            )
     else:
         table.add_row("GPU", "[dim]None detected — CPU inference only[/dim]")
 
@@ -467,6 +473,9 @@ def print_legend():
     legend_text.append(" = full GPU acceleration  |  ", style="dim")
     legend_text.append("CPU+GPU", style="yellow")
     legend_text.append(" = split across GPU + RAM  |  ", style="dim")
+    legend_text.append("Multi-GPU", style="bold cyan")
+    legend_text.append(" = split across multiple GPUs\n", style="dim")
+    legend_text.append("             ", style="bold white")
     legend_text.append("CPU", style="dim white")
     legend_text.append(" = CPU inference only", style="dim")
 
@@ -492,34 +501,40 @@ def print_footer():
 
 
 def prompt_export() -> bool:
-    console.print()
-    answer = console.input(
-        "[bold yellow]Save results as Markdown report? [y/N]:[/bold yellow] "
-    ).strip().lower()
-    return answer in ("y", "yes")
+    try:
+        console.print()
+        answer = console.input(
+            "[bold yellow]Save results as Markdown report? [y/N]:[/bold yellow] "
+        ).strip().lower()
+        return answer in ("y", "yes")
+    except EOFError:
+        return False
 
 
 def prompt_pull(recs: list[Recommendation]) -> str | None:
-    console.print()
-    console.print("[bold yellow]Auto-pull a recommended model?[/bold yellow]")
-    for i, rec in enumerate(recs[:10], 1):
-        pulled_tag = " [green](already pulled)[/green]" if rec.model.pulled else ""
-        label = f"{rec.model.name}:{rec.variant.tag}"
-        console.print(
-            f"  [dim]{i}.[/dim] [white]{label}[/white]{pulled_tag}"
-        )
-    console.print(f"  [dim]{0}.[/dim] Skip")
-    console.print()
-    choice = console.input("[bold]Enter number:[/bold] ").strip()
-    if choice == "0" or not choice:
-        return None
     try:
-        idx = int(choice) - 1
-        if 0 <= idx < min(10, len(recs)):
-            return f"{recs[idx].model.name}:{recs[idx].variant.tag}"
-    except ValueError:
-        pass
-    return None
+        console.print()
+        console.print("[bold yellow]Auto-pull a recommended model?[/bold yellow]")
+        for i, rec in enumerate(recs[:10], 1):
+            pulled_tag = " [green](already pulled)[/green]" if rec.model.pulled else ""
+            label = f"{rec.model.name}:{rec.variant.tag}"
+            console.print(
+                f"  [dim]{i}.[/dim] [white]{label}[/white]{pulled_tag}"
+            )
+        console.print(f"  [dim]{0}.[/dim] Skip")
+        console.print()
+        choice = console.input("[bold]Enter number:[/bold] ").strip()
+        if choice == "0" or not choice:
+            return None
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < min(10, len(recs)):
+                return f"{recs[idx].model.name}:{recs[idx].variant.tag}"
+        except ValueError:
+            pass
+        return None
+    except EOFError:
+        return None
 
 
 def spinner(message: str) -> Progress:

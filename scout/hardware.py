@@ -42,6 +42,15 @@ class HardwareProfile:
             return 0.0
         return round(max(g.vram_mb for g in self.gpus) / 1024, 1)
 
+    @property
+    def combined_vram_gb(self) -> float:
+        """Total VRAM across all GPUs."""
+        return self.total_vram_gb
+
+    @property
+    def multi_gpu(self) -> bool:
+        return len(self.gpus) > 1
+
 
 def _is_apple_silicon() -> bool:
     """Detect if running on Apple Silicon (M1/M2/M3/M4)."""

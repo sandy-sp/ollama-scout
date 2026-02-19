@@ -48,7 +48,7 @@ class InteractiveSession:
     def run(self):
         try:
             self._run_steps()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             console.print("\n[dim]Goodbye![/dim]")
             sys.exit(0)
 
@@ -61,6 +61,14 @@ class InteractiveSession:
 
         # Step 3 — Connection check
         models = self._step_fetch_models()
+
+        # Check cache staleness
+        from .ollama_api import is_cache_stale
+        if is_cache_stale():
+            console.print(
+                "[dim]Model list may be outdated. "
+                "Run --update-models to refresh.[/dim]"
+            )
 
         # Detect pulled models
         pulled = get_pulled_models()
