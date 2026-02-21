@@ -179,3 +179,16 @@ class TestGroupByUseCase:
         chat_names = [r.model.name for r in grouped["chat"]]
         assert "code-model" in coding_names
         assert "chat-model" in chat_names
+
+    def test_no_per_group_cap(self):
+        """group_by_use_case should not cap groups at 5 models."""
+        hw = _make_hw(vram_gb=10.0, ram_gb=32.0)
+        # Create 7 distinct chat models
+        models = [
+            _make_model(f"chat-model-{i}", "7B", 4.0, use_cases=["chat"])
+            for i in range(7)
+        ]
+        recs = get_recommendations(models, hw, top_n=20)
+        grouped = group_by_use_case(recs)
+        # All 7 models should appear — no cap of 5
+        assert len(grouped["chat"]) == 7

@@ -145,7 +145,7 @@ def group_by_use_case(recs: list[Recommendation]) -> dict[str, list[Recommendati
         for uc in rec.model.use_cases:
             if uc in groups:
                 groups[uc].append(rec)
-    # Dedupe within each group (keep top 5)
+    # Dedupe within each group (no per-group cap; bounded by get_recommendations top_n)
     for key in groups:
         seen = set()
         deduped = []
@@ -153,5 +153,5 @@ def group_by_use_case(recs: list[Recommendation]) -> dict[str, list[Recommendati
             if r.model.name not in seen:
                 seen.add(r.model.name)
                 deduped.append(r)
-        groups[key] = deduped[:5]
+        groups[key] = deduped
     return groups

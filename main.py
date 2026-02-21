@@ -18,8 +18,10 @@ Usage:
 import argparse
 import sys
 
+from rich.panel import Panel
+
 from scout import __version__
-from scout.benchmark import benchmark_pulled_models, get_benchmark_estimates
+from scout.benchmark import benchmark_pulled_models
 from scout.config import DEFAULT_CONFIG, load_config, print_config, save_config
 from scout.display import (
     console,
@@ -32,6 +34,7 @@ from scout.display import (
     print_legend,
     print_model_comparison,
     print_model_detail,
+    print_ollama_not_installed,
     print_recommendations_flat,
     print_recommendations_grouped,
     print_success,
@@ -41,7 +44,13 @@ from scout.display import (
 )
 from scout.exporter import export_markdown
 from scout.hardware import detect_hardware
-from scout.ollama_api import fetch_ollama_models, get_fallback_models, get_pulled_models, pull_model
+from scout.ollama_api import (
+    check_ollama_installed,
+    fetch_ollama_models,
+    get_fallback_models,
+    get_pulled_models,
+    pull_model,
+)
 from scout.recommender import _score_variant, get_recommendations, group_by_use_case
 
 
@@ -223,6 +232,13 @@ def main():
 
     print_banner()
 
+    # --- Ollama installation check ---
+    ollama_installed, ollama_version = check_ollama_installed()
+    if ollama_installed:
+        print_info(f"Ollama detected: [dim]{ollama_version}[/dim]")
+    else:
+        print_ollama_not_installed()
+
     # --- Direct pull mode ---
     if args.pull:
         print_info(f"Pulling model: [bold]{args.pull}[/bold]")
@@ -318,7 +334,6 @@ def main():
             if model is None:
                 return None
             best_score, best_variant, best_fit, best_mode = -1, None, None, None
-            best_tps = None
             for variant in model.tags:
                 score, fit_label, run_mode, note = _score_variant(variant, hw)
                 if score > best_score:
@@ -326,16 +341,6 @@ def main():
                     best_variant = variant
                     best_fit = fit_label
                     best_mode = run_mode
-            if best_variant:
-                from scout.benchmark import estimate_speed
-                from scout.recommender import Recommendation
-                rec = Recommendation(
-                    model=model, variant=best_variant,
-                    score=best_score, run_mode=best_mode,
-                    fit_label=best_fit,
-                )
-                est = estimate_speed(rec, hw)
-                best_tps = est.tokens_per_sec
             return {
                 "name": model.name,
                 "description": model.description,
@@ -346,7 +351,7 @@ def main():
                 "fit_label": best_fit,
                 "run_mode": best_mode,
                 "score": best_score,
-                "est_tps": best_tps,
+                "est_tps": None,
                 "pulled": model.name in pulled,
             }
 
@@ -387,21 +392,25 @@ def main():
 
     # --- Benchmark ---
     if args.benchmark:
-        estimates = get_benchmark_estimates(recs, hw)
-        if pulled:
+        if not pulled or not ollama_installed:
+            console.print(Panel(
+                "No models are currently pulled.\n"
+                "Pull a model with [cyan]ollama pull MODEL[/cyan] "
+                "or use the pull prompt below.",
+                title="[dim]Benchmark[/dim]",
+                border_style="bright_black",
+                padding=(0, 2),
+            ))
+        else:
             with spinner("Running real benchmarks on pulled models...") as p:
                 p.add_task("")
                 p.start()
-                real_estimates = benchmark_pulled_models(pulled, hw)
+                estimates = benchmark_pulled_models(pulled, hw)
                 p.stop()
-            # Merge: real results replace formula estimates for the same model
-            real_names = {e.model_name.split(":")[0] for e in real_estimates}
-            estimates = [
-                e for e in estimates
-                if e.model_name.split(":")[0] not in real_names
-            ]
-            estimates = real_estimates + estimates
-        print_benchmark(estimates)
+            if estimates:
+                print_benchmark(estimates)
+            else:
+                print_info("No benchmark results available.")
 
     # --- Export ---
     export_dir = cfg.get("export_dir", "")
@@ -426,7 +435,7 @@ def main():
             print_error(f"Export failed: {e}")
 
     # --- Pull prompt ---
-    if not args.no_pull_prompt and not args.export:
+    if not args.no_pull_prompt and not args.export and ollama_installed:
         model_to_pull = prompt_pull(recs)
         if model_to_pull:
             print_info(f"Pulling [bold]{model_to_pull}[/bold]...")

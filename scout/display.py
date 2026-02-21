@@ -172,7 +172,7 @@ def print_recommendations_flat(recs: list[Recommendation]):
 
 
 def print_benchmark(estimates: list[BenchmarkEstimate]):
-    """Print a benchmark estimation panel for top models."""
+    """Print real benchmark results for pulled models."""
     RATING_STYLES = {
         "Fast": ("bold green", "Fast ⚡"),
         "Moderate": ("bold yellow", "Moderate 🔄"),
@@ -180,7 +180,7 @@ def print_benchmark(estimates: list[BenchmarkEstimate]):
     }
 
     table = Table(
-        title="[bold cyan]Inference Speed Estimates[/bold cyan]",
+        title="[bold cyan]Real Benchmark Results[/bold cyan]",
         box=box.ROUNDED,
         border_style="cyan",
         show_header=True,
@@ -191,38 +191,22 @@ def print_benchmark(estimates: list[BenchmarkEstimate]):
     table.add_column("Mode", justify="center")
     table.add_column("Speed", justify="right")
     table.add_column("Rating", justify="center")
-    table.add_column("Source", justify="center")
 
     for est in estimates:
         mode_style = RUN_MODE_COLORS.get(est.run_mode, "white")
         style, label = RATING_STYLES.get(est.rating, ("white", est.rating))
-        source = "[green]⚡ Real[/green]" if est.is_real else "[dim]~ Est.[/dim]"
         table.add_row(
             est.model_name,
             f"[{mode_style}]{est.run_mode}[/{mode_style}]",
             f"{est.tokens_per_sec} t/s",
             f"[{style}]{label}[/{style}]",
-            source,
         )
 
     console.print(table)
-    has_real = any(est.is_real for est in estimates)
-    has_est = any(not est.is_real for est in estimates)
-    if has_real and has_est:
-        console.print(
-            "[dim]Real timings measured on your hardware. "
-            "Estimates shown for models not yet pulled.[/dim]"
-        )
-    elif has_real:
-        console.print(
-            "[dim]Timings measured on your hardware. Actual performance varies "
-            "with context length and system load.[/dim]"
-        )
-    else:
-        console.print(
-            "[dim]Estimates only. Actual performance depends on context length, "
-            "system load, and model architecture.[/dim]"
-        )
+    console.print(
+        "[dim]Timings measured on your hardware. Actual performance varies "
+        "with context length and system load.[/dim]"
+    )
     console.print()
 
 
@@ -485,6 +469,21 @@ def print_legend():
         border_style="bright_black",
         padding=(0, 1),
     ))
+
+
+def print_ollama_not_installed():
+    """Print a warning panel when Ollama is not installed."""
+    console.print(Panel(
+        "[bold yellow]Ollama is not installed or not found in PATH.[/bold yellow]\n\n"
+        "Recommendations will still work, but you won't be able to pull or run models.\n\n"
+        "[bold]To install Ollama:[/bold]\n"
+        "  Linux/macOS:  [cyan]curl -fsSL https://ollama.com/install.sh | sh[/cyan]\n"
+        "  Windows:      [cyan]https://ollama.com/download[/cyan]",
+        title="[yellow]Ollama Not Found[/yellow]",
+        border_style="yellow",
+        padding=(0, 2),
+    ))
+    console.print()
 
 
 def print_footer():

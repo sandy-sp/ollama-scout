@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from rich.console import Console
 
-from scout.interactive import VALID_TOP_N, InteractiveSession
+from scout.interactive import TOP_N_MENU, InteractiveSession
 
 
 class TestInteractiveSessionInstantiation:
@@ -51,8 +51,8 @@ class TestUseCaseMenu:
 
 
 class TestResultsCount:
-    def test_valid_choice_10(self):
-        with patch.object(Console, "input", side_effect=["10"]), \
+    def test_valid_choice_2_gives_10(self):
+        with patch.object(Console, "input", side_effect=["2"]), \
              patch.object(Console, "print"):
             result = InteractiveSession._ask_results_count()
             assert result == 10
@@ -65,18 +65,26 @@ class TestResultsCount:
 
     def test_invalid_then_valid(self):
         with patch.object(
-            Console, "input", side_effect=["7", "15"],
+            Console, "input", side_effect=["5", "3"],
         ), patch.object(Console, "print"):
             result = InteractiveSession._ask_results_count()
             assert result == 15
 
-    def test_all_valid_values(self):
-        for n in VALID_TOP_N:
+    def test_all_valid_options(self):
+        expected = {"1": 5, "2": 10, "3": 15, "4": 20}
+        for key, val in expected.items():
             with patch.object(
-                Console, "input", side_effect=[str(n)],
+                Console, "input", side_effect=[key],
             ), patch.object(Console, "print"):
                 result = InteractiveSession._ask_results_count()
-                assert result == n
+                assert result == val
+
+    def test_top_n_menu_has_four_options(self):
+        assert len(TOP_N_MENU) == 4
+        assert TOP_N_MENU["1"] == 5
+        assert TOP_N_MENU["2"] == 10
+        assert TOP_N_MENU["3"] == 15
+        assert TOP_N_MENU["4"] == 20
 
 
 class TestCtrlCHandling:
@@ -93,11 +101,12 @@ class TestCtrlCHandling:
 
 
 class TestOfflineFallback:
+    @patch("scout.interactive.check_ollama_installed", return_value=(True, "ollama version 0.5.0"))
     @patch("scout.interactive.get_pulled_models", return_value=[])
     @patch("scout.interactive.get_fallback_models")
     @patch("scout.interactive.detect_hardware")
     def test_uses_fallback_when_user_says_no(
-        self, mock_hw, mock_fallback, mock_pulled,
+        self, mock_hw, mock_fallback, mock_pulled, mock_ollama,
     ):
         from scout.hardware import HardwareProfile
         from scout.ollama_api import ModelVariant, OllamaModel

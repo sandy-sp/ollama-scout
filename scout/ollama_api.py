@@ -442,6 +442,27 @@ def fetch_ollama_models(limit: int = 50, force_refresh: bool = False) -> list[Ol
     return _group_models(models)[:limit]
 
 
+def check_ollama_installed() -> tuple[bool, str]:
+    """Check if ollama is installed and return (is_installed, version_string).
+
+    Returns:
+        (True, version_string) if ollama is found and responsive
+        (False, '') if ollama is not installed or not responding
+    """
+    if not shutil.which("ollama"):
+        return False, ""
+    try:
+        result = subprocess.run(
+            ["ollama", "--version"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            return True, result.stdout.strip()
+        return False, ""
+    except (subprocess.TimeoutExpired, OSError):
+        return False, ""
+
+
 def get_pulled_models() -> list[str]:
     """Return list of already-pulled model names via `ollama list`."""
     if not shutil.which("ollama"):

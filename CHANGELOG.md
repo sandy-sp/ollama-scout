@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-02-21
+
+### Added
+
+- Graceful "Ollama not installed" detection: `check_ollama_installed()` checks binary + version; warning panel shown at startup; pull steps skipped automatically
+- Interactive mode shows Ollama version in welcome step when installed
+- Interactive mode shows Apple Silicon context message in hardware step
+- Use-case menu now shows one-line descriptions for each option
+- Results count prompt replaced with numbered menu (1→5, 2→10, 3→15, 4→20)
+- Summary line shown before recommendation tables ("Found N compatible models")
+- Pull step shows context note and run command after successful pull
+- Exit step shows `ollama run MODEL` command if a model was pulled
+
+### Changed
+
+- `group_by_use_case()` no longer hard-caps groups at 5 models (bounded only by `top_n`)
+- Benchmark results show only real measured timings (formula estimates removed)
+- `--benchmark` shows "pull a model first" panel when no models are pulled
+- Model comparison no longer shows estimated speed (Est. Speed row shows N/A)
+- Separator lines (`console.rule`) added between interactive steps
+
+### Removed
+
+- `estimate_speed()` and `get_benchmark_estimates()` (formula-based benchmark helpers)
+- `is_real` field from `BenchmarkEstimate` (all benchmarks are real now)
+- Source column ("⚡ Real" / "~ Est.") from benchmark table
+
 ## [0.2.0] - 2026-02-18
 
 ### Added

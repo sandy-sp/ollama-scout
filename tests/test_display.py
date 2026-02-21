@@ -116,18 +116,16 @@ class TestDisplayFunctions:
         output = _capture(print_footer)
         assert "--help" in output
 
-    def test_print_benchmark_shows_source_column(self):
-        est_real = BenchmarkEstimate(
+    def test_print_benchmark_no_source_column(self):
+        est = BenchmarkEstimate(
             model_name="test:7b", run_mode="GPU",
-            tokens_per_sec=80.0, rating="Fast", is_real=True,
+            tokens_per_sec=80.0, rating="Fast",
         )
-        est_formula = BenchmarkEstimate(
-            model_name="other:7b", run_mode="CPU",
-            tokens_per_sec=8.0, rating="Slow", is_real=False,
-        )
-        output = _capture(print_benchmark, [est_real, est_formula])
-        assert "Real" in output
-        assert "Est." in output
+        output = _capture(print_benchmark, [est])
+        # Source column removed — "⚡ Real" and "~ Est." indicators gone
+        assert "⚡ Real" not in output
+        assert "~ Est." not in output
+        assert "Source" not in output
 
 
 class TestPrintModelComparison:

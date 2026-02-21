@@ -1,4 +1,5 @@
 """Tests for scout.ollama_api module."""
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from scout.ollama_api import (
@@ -10,6 +11,7 @@ from scout.ollama_api import (
     _parse_param_size,
     _parse_param_size_from_name_and_tag,
     _parse_quantization,
+    check_ollama_installed,
     fetch_ollama_models,
     get_fallback_models,
     get_pulled_models,
@@ -242,6 +244,39 @@ class TestFetchOllamaModels:
     @patch("scout.ollama_api._load_cache", return_value=None)
     def test_stale_cache_reports_stale(self, mock_cache):
         assert is_cache_stale() is True
+
+
+class TestCheckOllamaInstalled:
+    @patch("scout.ollama_api.shutil.which", return_value=None)
+    def test_returns_false_when_not_found(self, mock_which):
+        installed, version = check_ollama_installed()
+        assert installed is False
+        assert version == ""
+
+    @patch("scout.ollama_api.subprocess.run")
+    @patch("scout.ollama_api.shutil.which", return_value="/usr/bin/ollama")
+    def test_returns_true_with_version(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="ollama version 0.5.0\n")
+        installed, version = check_ollama_installed()
+        assert installed is True
+        assert "0.5.0" in version
+
+    @patch(
+        "scout.ollama_api.subprocess.run",
+        side_effect=subprocess.TimeoutExpired("ollama", 5),
+    )
+    @patch("scout.ollama_api.shutil.which", return_value="/usr/bin/ollama")
+    def test_returns_false_on_timeout(self, mock_which, mock_run):
+        installed, version = check_ollama_installed()
+        assert installed is False
+        assert version == ""
+
+    @patch("scout.ollama_api.subprocess.run")
+    @patch("scout.ollama_api.shutil.which", return_value="/usr/bin/ollama")
+    def test_returns_false_when_returncode_nonzero(self, mock_which, mock_run):
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        installed, version = check_ollama_installed()
+        assert installed is False
 
 
 class TestGetPulledModels:

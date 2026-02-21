@@ -7,7 +7,7 @@ import sys
 from rich.panel import Panel
 from rich.text import Text
 
-from .benchmark import benchmark_pulled_models, get_benchmark_estimates
+from .benchmark import benchmark_pulled_models
 from .display import (
     console,
     print_benchmark,
@@ -25,6 +25,7 @@ from .display import (
 from .exporter import export_markdown
 from .hardware import detect_hardware
 from .ollama_api import (
+    check_ollama_installed,
     fetch_ollama_models,
     get_fallback_models,
     get_pulled_models,
@@ -33,13 +34,23 @@ from .ollama_api import (
 from .recommender import get_recommendations, group_by_use_case
 
 USE_CASE_MENU = {
-    "1": ("all", "All categories"),
-    "2": ("coding", "💻 Coding"),
-    "3": ("reasoning", "🧠 Reasoning / Analysis"),
-    "4": ("chat", "💬 Chat / General use"),
+    "1": ("all", "All categories", "Show all compatible models across every use case"),
+    "2": ("coding", "💻 Coding", "Code generation, completion, and debugging"),
+    "3": ("reasoning", "🧠 Reasoning / Analysis", "Complex reasoning, math, and analysis"),
+    "4": ("chat", "💬 Chat / General use", "Conversational AI and general-purpose tasks"),
 }
 
-VALID_TOP_N = {5, 10, 15, 20}
+TOP_N_MENU = {
+    "1": 5,
+    "2": 10,
+    "3": 15,
+    "4": 20,
+}
+
+
+def _sep():
+    """Print a dim separator line."""
+    console.rule(style="bright_black")
 
 
 class InteractiveSession:
@@ -53,22 +64,19 @@ class InteractiveSession:
             sys.exit(0)
 
     def _run_steps(self):
+        # Check Ollama before first step
+        ollama_installed, ollama_version = check_ollama_installed()
+
         # Step 1 — Welcome
-        self._step_welcome()
+        self._step_welcome(ollama_installed, ollama_version)
+        _sep()
 
         # Step 2 — Hardware scan
         hw = self._step_hardware_scan()
+        _sep()
 
         # Step 3 — Connection check
         models = self._step_fetch_models()
-
-        # Check cache staleness
-        from .ollama_api import is_cache_stale
-        if is_cache_stale():
-            console.print(
-                "[dim]Model list may be outdated. "
-                "Run --update-models to refresh.[/dim]"
-            )
 
         # Detect pulled models
         pulled = get_pulled_models()
@@ -79,9 +87,11 @@ class InteractiveSession:
                 f"Detected [green]{len(pulled)}[/green] "
                 f"already-pulled model(s): {names}{suffix}"
             )
+        _sep()
 
         # Step 4 — Use case selection
         use_case = self._step_use_case()
+        _sep()
 
         # Step 5 — Results count
         top_n = self._step_results_count()
@@ -98,35 +108,57 @@ class InteractiveSession:
             print_footer()
             return
 
+        total = len(recs)
+        label = use_case.capitalize() if use_case != "all" else "all categories"
         console.print()
+        console.print(
+            f"[dim]Found [bold]{total}[/bold] compatible model(s) for {label}.[/dim]"
+        )
+        console.print()
+
         if use_case != "all":
             print_recommendations_flat(recs)
         else:
             grouped = group_by_use_case(recs)
             print_recommendations_grouped(grouped, pulled)
         print_legend()
+        _sep()
 
         # Step 6b — Compare prompt
         self._step_compare(models, hw, pulled)
+        _sep()
 
         # Step 7 — Benchmark prompt
         self._step_benchmark(recs, hw, pulled)
+        _sep()
 
         # Step 8 — Export prompt
         self._step_export(hw, recs)
+        _sep()
 
-        # Step 9 — Pull prompt
-        self._step_pull(recs)
+        # Step 9 — Pull prompt (only if Ollama is installed)
+        pulled_model_name = None
+        if ollama_installed:
+            pulled_model_name = self._step_pull(recs)
+        else:
+            console.print("[dim]Skipping pull — Ollama is not installed.[/dim]")
 
         # Step 10 — Exit
         console.print()
-        console.print(
-            "[dim]Done! Run [bold]ollama-scout --help[/bold] "
-            "to see all available options.[/dim]"
-        )
+        if pulled_model_name:
+            console.print(
+                f"[bold green]All done![/bold green] Run your model:\n"
+                f"  [cyan]ollama run {pulled_model_name}[/cyan]"
+            )
+        else:
+            console.print(
+                "[dim]Tip: Run [bold]ollama-scout --help[/bold] "
+                "to see all available options.[/dim]"
+            )
         print_footer()
 
-    def _step_welcome(self):
+    @staticmethod
+    def _step_welcome(ollama_installed: bool, ollama_version: str):
         from scout import __version__
         banner = Text()
         banner.append("🔭 ollama", style="bold cyan")
@@ -140,9 +172,21 @@ class InteractiveSession:
         console.print(Panel(banner, border_style="cyan", padding=(0, 2)))
         console.print()
         console.print(
-            "[bold]Welcome![/bold] Let's find the best LLMs "
-            "for your hardware."
+            "[bold]Welcome![/bold] Let's find the best LLMs for your hardware."
         )
+        console.print(
+            "[dim]We'll scan your system, filter compatible models, "
+            "and guide you through the rest.[/dim]"
+        )
+        console.print()
+        if ollama_installed:
+            console.print(f"[dim]Ollama detected: {ollama_version}[/dim]")
+        else:
+            console.print(
+                "[yellow]Ollama not found.[/yellow] "
+                "Recommendations will still work, but pulling models requires Ollama."
+            )
+        console.print()
         console.input(
             "[dim]Press Enter to scan your system, "
             "or Ctrl+C to exit.[/dim] "
@@ -163,10 +207,23 @@ class InteractiveSession:
 
         print_hardware_summary(hw)
 
-        if not hw.gpus:
+        if hw.is_unified_memory:
+            console.print(
+                "[cyan]Apple Silicon detected.[/cyan] "
+                "Unified memory is used as GPU VRAM for fast local inference."
+            )
+            console.print()
+        elif not hw.gpus:
             console.print(
                 "[yellow]No dedicated GPU detected.[/yellow] "
                 "We'll recommend models optimized for CPU inference."
+            )
+            console.print()
+        else:
+            gpu_names = ", ".join(g.name for g in hw.gpus)
+            console.print(
+                f"[green]GPU detected:[/green] {gpu_names}. "
+                "Models will run with full GPU acceleration."
             )
             console.print()
 
@@ -206,8 +263,8 @@ class InteractiveSession:
     @staticmethod
     def _ask_use_case() -> str:
         console.print("[bold]What are you mainly using this for?[/bold]")
-        for key, (_, label) in USE_CASE_MENU.items():
-            console.print(f"  [dim]{key}.[/dim] {label}")
+        for key, (_, label, description) in USE_CASE_MENU.items():
+            console.print(f"  [dim]{key}.[/dim] {label}  [dim]— {description}[/dim]")
         console.print()
 
         while True:
@@ -225,20 +282,22 @@ class InteractiveSession:
 
     @staticmethod
     def _ask_results_count() -> int:
+        console.print("[bold yellow]How many recommendations would you like?[/bold yellow]")
+        menu_labels = ["Quick overview", "Standard (default)", "More options", "Extended list"]
+        for key, n in TOP_N_MENU.items():
+            label = menu_labels[int(key) - 1]
+            console.print(f"  [dim]{key}.[/dim] {n:>2}  [dim]— {label}[/dim]")
+        console.print()
+
         while True:
             choice = console.input(
-                "[bold yellow]How many recommendations? "
-                "\\[5/10/15/20] (default: 10):[/bold yellow] "
+                "[bold]Enter 1-4 (default: 2):[/bold] "
             ).strip()
             if choice == "":
                 return 10
-            try:
-                n = int(choice)
-                if n in VALID_TOP_N:
-                    return n
-            except ValueError:
-                pass
-            console.print("[red]Please enter 5, 10, 15, or 20.[/red]")
+            if choice in TOP_N_MENU:
+                return TOP_N_MENU[choice]
+            console.print("[red]Please enter 1, 2, 3, or 4.[/red]")
 
     @staticmethod
     def _step_compare(models, hw, pulled):
@@ -261,8 +320,7 @@ class InteractiveSession:
             print_error("Both model names are required.")
             return
 
-        from .benchmark import estimate_speed
-        from .recommender import Recommendation, _score_variant
+        from .recommender import _score_variant
 
         def _build_detail(name):
             target = name.lower()
@@ -280,14 +338,6 @@ class InteractiveSession:
                 sc, fl, rm, _ = _score_variant(v, hw)
                 if sc > best_score:
                     best_score, best_v, best_fit, best_mode = sc, v, fl, rm
-            est_tps = None
-            if best_v:
-                rec = Recommendation(
-                    model=model, variant=best_v,
-                    score=best_score, run_mode=best_mode,
-                    fit_label=best_fit,
-                )
-                est_tps = estimate_speed(rec, hw).tokens_per_sec
             return {
                 "name": model.name,
                 "description": model.description,
@@ -298,7 +348,7 @@ class InteractiveSession:
                 "fit_label": best_fit,
                 "run_mode": best_mode,
                 "score": best_score,
-                "est_tps": est_tps,
+                "est_tps": None,
                 "pulled": model.name in (pulled or []),
             }
 
@@ -315,21 +365,22 @@ class InteractiveSession:
     def _step_benchmark(recs, hw, pulled):
         console.print()
         answer = console.input(
-            "[bold yellow]Would you like to see estimated "
-            "inference speeds? \\[y/N]:[/bold yellow] "
+            "[bold yellow]Would you like to benchmark pulled models? \\[y/N]:[/bold yellow] "
         ).strip().lower()
-        if answer in ("y", "yes"):
-            estimates = get_benchmark_estimates(recs, hw)
-            if pulled:
-                print_info("Running real benchmarks on pulled models...")
-                real_estimates = benchmark_pulled_models(pulled, hw)
-                real_names = {e.model_name.split(":")[0] for e in real_estimates}
-                estimates = [
-                    e for e in estimates
-                    if e.model_name.split(":")[0] not in real_names
-                ]
-                estimates = real_estimates + estimates
+        if answer not in ("y", "yes"):
+            return
+        if not pulled:
+            console.print(
+                "[dim]No models are currently pulled. "
+                "Pull a model first to run real benchmarks.[/dim]"
+            )
+            return
+        print_info("Running real benchmarks on pulled models...")
+        estimates = benchmark_pulled_models(pulled, hw)
+        if estimates:
             print_benchmark(estimates)
+        else:
+            console.print("[dim]Could not measure speeds for pulled models.[/dim]")
 
     @staticmethod
     def _step_export(hw, recs):
@@ -356,11 +407,15 @@ class InteractiveSession:
             print_error(f"Export failed: {e}")
 
     @staticmethod
-    def _step_pull(recs):
+    def _step_pull(recs) -> str | None:
+        """Show pull menu and pull selected model. Returns pulled model name or None."""
         console.print()
+        console.print("[bold yellow]Pull a recommended model?[/bold yellow]")
         console.print(
-            "[bold yellow]Pull a recommended model?[/bold yellow]"
+            "[dim]You can run any pulled model with "
+            "[bold]ollama run MODEL[/bold][/dim]"
         )
+        console.print()
         for i, rec in enumerate(recs[:10], 1):
             pulled_tag = (
                 " [green](already pulled)[/green]"
@@ -375,7 +430,7 @@ class InteractiveSession:
 
         choice = console.input("[bold]Enter number:[/bold] ").strip()
         if choice == "0" or not choice:
-            return
+            return None
 
         try:
             idx = int(choice) - 1
@@ -385,9 +440,14 @@ class InteractiveSession:
                 try:
                     pull_model(model_name)
                     print_success(f"Successfully pulled {model_name}")
+                    console.print(
+                        f"[dim]Run it now: [bold]ollama run {model_name}[/bold][/dim]"
+                    )
+                    return model_name
                 except FileNotFoundError as e:
                     print_error(str(e))
                 except Exception as e:
                     print_error(f"Pull failed: {e}")
         except ValueError:
             pass
+        return None
