@@ -14,37 +14,10 @@
 
 ## Demo
 
-<!-- TODO: Add demo.gif once recorded. Recommended tool: vhs (https://github.com/charmbracelet/vhs) -->
-<!-- ![demo](docs/demo.gif) -->
-
-```
-$ ollama-scout
-
-  ollama-scout v0.2.0  |  LLM Hardware Advisor  (Interactive Mode)
-
-  Welcome! Let's find the best LLMs for your hardware.
-  Press Enter to scan your system, or Ctrl+C to exit.
-
-                   System Hardware
-  ┌─────────────────┬────────────────────────────────────────┐
-  │ OS              │ Linux                                  │
-  │ CPU             │ AMD Ryzen 9 5900X                      │
-  │ Cores / Threads │ 12 cores / 24 threads                  │
-  │ RAM             │ 32.0 GB                                │
-  │ GPU             │ NVIDIA RTX 3080 (10.0 GB VRAM)         │
-  └─────────────────┴────────────────────────────────────────┘
-
-  What are you mainly using this for?
-    1. All categories    2. Coding    3. Reasoning    4. Chat
-
-  Coding Models
-  Model             Tag    Quant    Size    Fit        Mode     Status
-  deepseek-coder    6.7b   Q4_K_M   3.8GB   Excellent  GPU      Available
-  codellama         7b     Q4_K_M   3.8GB   Excellent  GPU      Pulled
-
-  Would you like to compare two models? [y/N]:
-  Save results as a Markdown report? [y/N]:
-```
+<video width="100%" controls>
+  <source src="docs/ollama-scout-demo.mkv" type="video/x-matroska">
+  Your browser does not support the video tag. <a href="docs/ollama-scout-demo.mkv">Download demo</a>
+</video>
 
 ---
 
