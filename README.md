@@ -14,10 +14,7 @@
 
 ## Demo
 
-<video width="100%" controls>
-  <source src="docs/ollama-scout-demo.mkv" type="video/x-matroska">
-  Your browser does not support the video tag. <a href="docs/ollama-scout-demo.mkv">Download demo</a>
-</video>
+![demo](docs/ollama-scout-demo.gif)
 
 ---
 
