@@ -22,7 +22,19 @@ from rich.panel import Panel
 
 from scout import __version__
 from scout.benchmark import benchmark_pulled_models
-from scout.config import DEFAULT_CONFIG, load_config, print_config, save_config
+from scout.config import (
+    DEFAULT_CONFIG,
+    create_profile,
+    delete_profile,
+    get_active_profile,
+    get_profile_overrides,
+    list_profiles,
+    load_config,
+    print_config,
+    save_config,
+    set_profile_value,
+    switch_profile,
+)
 from scout.display import (
     console,
     print_banner,
@@ -63,6 +75,11 @@ def parse_args():
         "--version",
         action="version",
         version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Run system health checks (Python, Ollama, GPU, RAM, cache, config)",
     )
     parser.add_argument(
         "-i", "--interactive",
@@ -153,12 +170,45 @@ def parse_args():
         metavar="KEY=VALUE",
         help="Set a config value (e.g. --config-set default_top_n=20)",
     )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="Use a named config profile for this run",
+    )
+    parser.add_argument(
+        "--profile-create",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="Create a new config profile",
+    )
+    parser.add_argument(
+        "--profile-list",
+        action="store_true",
+        help="List all config profiles",
+    )
+    parser.add_argument(
+        "--profile-delete",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="Delete a config profile",
+    )
+    parser.add_argument(
+        "--profile-switch",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help="Switch the active config profile",
+    )
     return parser.parse_args()
 
 
 def _apply_config(args):
     """Merge config file defaults with CLI args (CLI wins)."""
-    cfg = load_config()
+    cfg = load_config(profile=getattr(args, "profile", None))
 
     if args.use_case is None:
         args.use_case = cfg.get("default_use_case", "all")
@@ -183,13 +233,18 @@ def main():
         InteractiveSession().run()
         return
 
+    # --- Doctor command ---
+    if args.doctor:
+        from scout.doctor import run_doctor
+        run_doctor()
+        return
+
     # --- Config commands ---
     if args.config:
         print_config()
         return
 
     if args.config_set:
-        cfg = load_config()
         if "=" not in args.config_set:
             print_error("Format: --config-set key=value")
             sys.exit(1)
@@ -207,9 +262,79 @@ def main():
             value = int(value.strip())
         else:
             value = value.strip()
-        cfg[key] = value
-        save_config(cfg)
-        print_success(f"Config updated: {key} = {value!r}")
+        if args.profile:
+            # Set value in a specific profile
+            if not set_profile_value(args.profile, key, value):
+                print_error(f"Profile '{args.profile}' not found.")
+                sys.exit(1)
+            print_success(f"Profile [{args.profile}] updated: {key} = {value!r}")
+        else:
+            cfg = load_config()
+            cfg[key] = value
+            save_config(cfg)
+            print_success(f"Config updated: {key} = {value!r}")
+        return
+
+    # --- Profile commands ---
+    if args.profile_list:
+        from rich import box
+        from rich.console import Console as _C
+        from rich.table import Table
+        _con = _C()
+        active = get_active_profile()
+        profiles = list_profiles()
+        table = Table(
+            title="[bold cyan]Config Profiles[/bold cyan]",
+            box=box.ROUNDED, border_style="cyan",
+        )
+        table.add_column("Profile", style="bold white")
+        table.add_column("Active", justify="center")
+        table.add_column("Overrides", style="dim")
+        for name in profiles:
+            active_marker = "[bold green]✓[/bold green]" if name == active else ""
+            overrides = get_profile_overrides(name)
+            if overrides:
+                overrides_str = ", ".join(f"{k}={v!r}" for k, v in overrides.items())
+            else:
+                overrides_str = "[dim](none)[/dim]"
+            table.add_row(name, active_marker, overrides_str)
+        _con.print(table)
+        return
+
+    if args.profile_create:
+        name = args.profile_create.strip()
+        if not name or not name.replace("-", "").replace("_", "").isalnum():
+            print_error("Profile name must be alphanumeric (hyphens/underscores allowed).")
+            sys.exit(1)
+        if create_profile(name):
+            print_success(f"Profile '{name}' created.")
+        else:
+            print_error(f"Profile '{name}' already exists.")
+            sys.exit(1)
+        return
+
+    if args.profile_delete:
+        name = args.profile_delete.strip()
+        if delete_profile(name):
+            print_success(f"Profile '{name}' deleted.")
+        elif name == "default":
+            print_error("Cannot delete the 'default' profile.")
+            sys.exit(1)
+        else:
+            print_error(f"Profile '{name}' not found.")
+            sys.exit(1)
+        return
+
+    if args.profile_switch:
+        name = args.profile_switch.strip()
+        if switch_profile(name):
+            print_success(f"Active profile switched to '{name}'.")
+        else:
+            print_error(
+                f"Profile '{name}' not found. "
+                "Use --profile-list to see available profiles."
+            )
+            sys.exit(1)
         return
 
     # --- Update models cache ---

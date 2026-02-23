@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-23
+
+### Added
+
+- `--doctor` command: 8-check health report (Python, Ollama, GPU, RAM, internet, cache, config, pulled models)
+- Config profiles: `--profile-create NAME`, `--profile-list`, `--profile-delete NAME`, `--profile-switch NAME`
+- `--profile NAME` flag to apply a named profile for a single run without changing the active profile
+- `--profile NAME --config-set key=value` to set values in a specific profile (without touching base config)
+- `scout/doctor.py` module with individual check functions (`_check_python`, `_check_ollama`, `_check_gpu`, etc.)
+- `list_profiles()`, `get_active_profile()`, `switch_profile()`, `create_profile()`, `delete_profile()`, `get_profile_overrides()`, `set_profile_value()` in `scout/config.py`
+- `load_config(profile=)` now accepts an optional profile name to apply overrides from
+- `print_config()` now shows active profile name and lists all profiles below the table
+- `profiles.json` stored alongside `config.json` (XDG-compliant path)
+
+### Changed
+
+- Test coverage improved from 69% to 88% (219 tests, was 178)
+- `docs/USAGE.md` fully rewritten to cover all CLI flags, profiles, doctor, config reference, and FAQ
+- `docs/RELEASE_NOTES_v0.3.0.md` added
+
 ## [0.2.1] - 2026-02-21
 
 ### Added

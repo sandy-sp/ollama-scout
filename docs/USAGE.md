@@ -3,14 +3,22 @@
 ## Installation
 
 ```bash
+pip install ollama-scout
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/sandy-sp/ollama-scout.git
 cd ollama-scout
-pip install -r requirements.txt
+pip install -e .
 ```
 
 **Requirements:**
 - Python 3.10+
-- [Ollama](https://ollama.com/) installed (for model pulling and local model detection)
+- [Ollama](https://ollama.com/) installed (for model pulling and benchmark; recommendations work without it)
+
+---
 
 ## Interactive Mode
 
@@ -29,37 +37,31 @@ The session walks you through these steps:
 4. **Use case selection** — Pick from All, Coding, Reasoning, or Chat
 5. **Results count** — Choose how many recommendations to show (5/10/15/20)
 6. **Recommendations** — View the results table with fit labels and run modes
-7. **Benchmark** — Optionally view estimated inference speeds
-8. **Export** — Optionally save results as a Markdown report
-9. **Pull** — Optionally pull a recommended model directly
-10. **Exit** — Done! Tips for CLI flags are shown
+7. **Compare** — Optionally compare two models side by side
+8. **Benchmark** — Optionally run real inference speed tests on pulled models
+9. **Export** — Optionally save results as a Markdown report
+10. **Pull** — Optionally pull a recommended model directly
+11. **Exit** — Done! The `ollama run MODEL` command is shown if you pulled a model
 
 Interactive mode is recommended for new users. Power users can use CLI flags to skip the prompts.
+
+---
 
 ## CLI Flags
 
 ### Basic scan
 
 ```bash
-python main.py
+ollama-scout --use-case coding
+ollama-scout --use-case reasoning
+ollama-scout --use-case chat
+ollama-scout --use-case all      # default
 ```
-
-Scans your hardware and displays model recommendations grouped by use case (Coding, Reasoning, Chat).
-
-### Filter by use case
-
-```bash
-python main.py --use-case coding
-python main.py --use-case reasoning
-python main.py --use-case chat
-```
-
-Only shows models tagged for the specified use case.
 
 ### Flat list view
 
 ```bash
-python main.py --flat
+ollama-scout --flat
 ```
 
 Displays all recommendations in a single flat table instead of grouped by use case.
@@ -67,7 +69,7 @@ Displays all recommendations in a single flat table instead of grouped by use ca
 ### Limit results
 
 ```bash
-python main.py --top 20
+ollama-scout --top 20
 ```
 
 Show the top N recommendations (default: 15).
@@ -75,16 +77,14 @@ Show the top N recommendations (default: 15).
 ### Export to Markdown
 
 ```bash
-python main.py --export                    # Auto-export with timestamp filename
-python main.py --output ~/report.md        # Export to a specific path
+ollama-scout --export                    # Auto-export with timestamp filename
+ollama-scout --output ~/report.md        # Export to a specific path
 ```
-
-Saves a formatted Markdown report of your hardware profile and recommendations.
 
 ### Pull a model
 
 ```bash
-python main.py --pull llama3.2:latest
+ollama-scout --pull llama3.2:latest
 ```
 
 Directly pull a specific model via `ollama pull` without running a full scan.
@@ -92,79 +92,212 @@ Directly pull a specific model via `ollama pull` without running a full scan.
 ### Offline mode
 
 ```bash
-python main.py --offline
+ollama-scout --offline
 ```
 
-Skips the live API fetch and uses a built-in list of ~15 popular models with known sizes. Useful when you have no internet or the Ollama API is unreachable.
+Skips the live API fetch and uses a built-in list of ~15 popular models. Useful when you have no internet or the Ollama API is unreachable.
+
+### Single model detail view
+
+```bash
+ollama-scout --model deepseek-coder
+```
+
+Shows all variants of a specific model with individual fit scores and run modes.
+
+### Compare two models
+
+```bash
+ollama-scout --compare llama3.2 mistral
+```
+
+Side-by-side comparison with a verdict on which model is a better fit for your hardware.
+
+### Benchmark pulled models
+
+```bash
+ollama-scout --benchmark
+```
+
+Runs real `ollama run` timing tests on all currently-pulled models and shows tokens/sec with a rating.
 
 ### Skip interactive prompts
 
 ```bash
-python main.py --no-pull-prompt            # Skip the "pull a model?" prompt
-python main.py --export --no-pull-prompt   # Non-interactive: export and exit
+ollama-scout --no-pull-prompt            # Skip the "pull a model?" prompt
+ollama-scout --export --no-pull-prompt   # Non-interactive: export and exit
 ```
 
-### Combine flags
+### Update model cache
 
 ```bash
-python main.py --offline --use-case coding --top 10 --export --no-pull-prompt
+ollama-scout --update-models
 ```
+
+Force-refreshes the model list from the Ollama API and updates the local 24-hour cache.
+
+---
+
+## System Health Check (`--doctor`)
+
+```bash
+ollama-scout --doctor
+```
+
+Runs a comprehensive health check and prints a summary table:
+
+| Check | What it verifies |
+|-------|-----------------|
+| Python ≥ 3.10 | Python version compatibility |
+| Ollama binary | `ollama` found in PATH, returns version |
+| GPU / VRAM | GPU(s) detected with total VRAM |
+| RAM (≥ 4 GB) | System RAM meets minimum requirement |
+| Internet | Can reach the internet (for live model fetch) |
+| Model cache | Cache file exists and freshness (24h TTL) |
+| Config file | Config file is valid JSON with known keys |
+| Pulled models | Number of currently-pulled Ollama models |
+
+Warnings are shown for items that need attention; all checks passing prints "All checks passed."
+
+---
+
+## Config Profiles
+
+Config profiles let you save named sets of settings for different use cases (e.g., a "quick" profile for demos or a "coding" profile for your daily workflow).
+
+### List profiles
+
+```bash
+ollama-scout --profile-list
+```
+
+Shows all profiles with their active status and any override values.
+
+### Create a profile
+
+```bash
+ollama-scout --profile-create coding
+```
+
+Creates a new empty profile named `coding`.
+
+### Set values in a profile
+
+Use `--profile` with `--config-set` to set values in a specific profile:
+
+```bash
+ollama-scout --profile coding --config-set default_use_case=coding
+ollama-scout --profile coding --config-set default_top_n=20
+```
+
+### Switch the active profile
+
+```bash
+ollama-scout --profile-switch coding
+```
+
+Makes `coding` the active profile for all future runs.
+
+### Use a profile for a single run
+
+```bash
+ollama-scout --profile coding
+```
+
+Applies the `coding` profile overrides for this run only, without changing the active profile.
+
+### Delete a profile
+
+```bash
+ollama-scout --profile-delete coding
+```
+
+Deletes the named profile. The `default` profile cannot be deleted.
+
+---
+
+## Persistent Configuration
+
+```bash
+ollama-scout --config                       # Show current config
+ollama-scout --config-set key=value         # Set a value
+```
+
+Available config keys:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `default_use_case` | `"all"` | Use case filter applied automatically |
+| `default_top_n` | `15` | Default number of recommendations |
+| `auto_export` | `false` | Automatically export results to Markdown |
+| `export_dir` | `""` | Directory for auto-exported reports |
+| `offline_mode` | `false` | Always use built-in fallback model list |
+| `show_benchmark` | `false` | Always run benchmarks |
+
+Config files are stored at:
+- **Linux:** `~/.config/ollama-scout/config.json` (respects `$XDG_CONFIG_HOME`)
+- **macOS:** `~/Library/Application Support/ollama-scout/config.json`
+- **Windows:** `%APPDATA%\ollama-scout\config.json`
+
+---
 
 ## How Scoring Works
 
-ollama-scout matches each model variant against your hardware using this logic:
+ollama-scout matches each model variant against your hardware:
 
-1. **Model size** is determined by the download size (from the API or fallback list), which reflects both parameter count and quantization level.
+1. **Model size** — from the download size (reflects parameter count + quantization).
 
-2. **Fit scoring** follows this priority:
+2. **Fit scoring:**
 
 | Condition | Fit Label | Run Mode | Meaning |
 |-----------|-----------|----------|---------|
-| VRAM >= model size | **Excellent** | GPU | Model fits entirely in GPU memory. Best performance. |
-| VRAM + RAM >= model size | **Good** | CPU+GPU | Model is split between GPU and system RAM. Moderate speed. |
-| RAM >= model size (no GPU) | **Possible** | CPU | Runs entirely on CPU. Functional but slow. |
-| Neither sufficient | *Excluded* | N/A | Model is too large and is not shown. |
+| VRAM ≥ model size | **Excellent** | GPU | Model fits entirely in GPU memory |
+| VRAM + RAM ≥ model size | **Good** | CPU+GPU | Split between GPU and system RAM |
+| RAM ≥ model size (no GPU) | **Possible** | CPU | CPU-only inference |
+| Neither sufficient | *Excluded* | N/A | Too large, not shown |
 
-3. **Score tiebreakers:** smaller models score higher (faster inference). Already-pulled models get a bonus.
+3. **Multi-GPU:** Combined VRAM from all GPUs is used for scoring ("Multi-GPU" run mode).
 
-4. **Apple Silicon:** On M1/M2/M3/M4 Macs, RAM and VRAM are the same unified memory pool. ollama-scout detects this and treats your total RAM as available VRAM, minus a 4GB reserve for macOS overhead.
+4. **Apple Silicon:** Total RAM is treated as VRAM (unified memory), minus a 4 GB OS reserve.
+
+5. **Score tiebreakers:** Smaller models score higher (faster inference). Already-pulled models get a bonus.
+
+---
 
 ## Platform-Specific Notes
 
 ### Linux
-- **GPU detection:** Uses `nvidia-smi` (NVIDIA) or `rocm-smi` (AMD ROCm)
+- **GPU detection:** `nvidia-smi` (NVIDIA) or `rocm-smi` (AMD ROCm)
 - **CPU detection:** Reads `/proc/cpuinfo`
-- **RAM detection:** Uses `psutil` if available, otherwise reads `/proc/meminfo`
+- **RAM detection:** `psutil` if available, otherwise `/proc/meminfo`
 
 ### macOS
-- **Apple Silicon (M1/M2/M3/M4):** Detected via `platform.processor()` and `sysctl hw.optional.arm64`. Unified memory is treated as VRAM for scoring.
-- **Intel Macs:** GPU VRAM detected via `system_profiler SPDisplaysDataType`
-- **CPU detection:** Uses `sysctl -n machdep.cpu.brand_string`
-- **RAM detection:** Uses `sysctl -n hw.memsize`
+- **Apple Silicon (M1–M4):** Detected via `platform.processor()` and `sysctl hw.optional.arm64`
+- **Intel Macs:** GPU VRAM via `system_profiler SPDisplaysDataType`
+- **CPU:** `sysctl -n machdep.cpu.brand_string`
+- **RAM:** `sysctl -n hw.memsize`
 
 ### Windows
-- **GPU detection:** Uses `nvidia-smi` (NVIDIA) or `wmic` for other GPUs
-- **CPU detection:** Uses `wmic cpu get` commands
-- **RAM detection:** Uses `psutil` if available, otherwise `wmic computersystem get TotalPhysicalMemory`
+- **GPU detection:** `nvidia-smi` (NVIDIA) or `wmic` / PowerShell fallback
+- **CPU detection:** `wmic cpu get` commands
+- **RAM detection:** `psutil` if available, otherwise `wmic computersystem get TotalPhysicalMemory`
+
+---
 
 ## FAQ
 
 ### "Why is my model marked Possible?"
 
-The model fits in your system RAM but not in your GPU VRAM. It will run via CPU inference, which works but is significantly slower than GPU inference. Consider a smaller variant or a quantized version (e.g., Q4 instead of F16).
+The model fits in RAM but not GPU VRAM. It will run via CPU inference — functional but slow. Consider a smaller variant or a more quantized version (e.g., Q4_K_M instead of Q8_0).
 
 ### "Ollama not detected?"
 
-ollama-scout needs the `ollama` binary on your PATH to detect already-pulled models and to pull new ones. Install Ollama from [ollama.com](https://ollama.com/). The scan and recommendations still work without Ollama installed — you just won't see pulled-model detection or be able to auto-pull.
+ollama-scout needs the `ollama` binary on your PATH to detect pulled models and pull new ones. The scan and recommendations still work without Ollama. Install from [ollama.com](https://ollama.com/).
 
 ### "Live fetch failed?"
 
-The Ollama library API (`https://ollama.com/api/tags`) may be temporarily unreachable. When this happens, ollama-scout automatically falls back to a built-in list of ~15 popular models. You can also force this with `--offline`:
+The Ollama library API may be temporarily unreachable. ollama-scout automatically falls back to a built-in list of ~15 popular models. Force offline mode with `--offline`.
 
-```bash
-python main.py --offline
-```
+### "How fresh is the model cache?"
 
-### "Why are the sizes different from what I see on ollama.com?"
-
-The sizes shown are the on-disk download sizes reported by the API, which reflect the quantized model weights. The actual RAM/VRAM needed at runtime is similar but may vary slightly depending on context window size and batch settings.
+The model list is cached for 24 hours. Run `--update-models` to force a refresh. `--doctor` shows the cache age.

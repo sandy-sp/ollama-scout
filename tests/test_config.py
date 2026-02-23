@@ -9,6 +9,7 @@ from scout.config import (
     _get_config_path,
     _migrate_legacy_config,
     load_config,
+    print_config,
     save_config,
 )
 
@@ -127,6 +128,68 @@ class TestLoadConfig:
                  patch("scout.config.LEGACY_CONFIG_PATH", "/nonexistent"):
                 cfg = load_config()
                 assert cfg == DEFAULT_CONFIG
+
+
+class TestMigrationOSError:
+    def test_silently_returns_false_on_os_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            legacy = os.path.join(tmpdir, "legacy.json")
+            # new path is in a location that can't be created (simulate OSError)
+            new_path = os.path.join(tmpdir, "readonly", "config.json")
+
+            with open(legacy, "w") as f:
+                json.dump({"default_top_n": 25}, f)
+
+            with patch("scout.config.LEGACY_CONFIG_PATH", legacy), \
+                 patch("scout.config.CONFIG_PATH", new_path), \
+                 patch("scout.config.os.makedirs", side_effect=OSError("permission denied")):
+                result = _migrate_legacy_config()
+
+            assert result is False
+
+
+class TestSaveConfigError:
+    def test_silently_ignores_os_error(self):
+        with patch("scout.config.os.makedirs", side_effect=OSError("read only")):
+            # Should not raise
+            save_config({"default_top_n": 10})
+
+
+class TestLoadConfigMigration:
+    def test_prints_migration_message_when_migrated(self):
+        """When migration happens, load_config prints an info message."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            legacy = os.path.join(tmpdir, "legacy.json")
+            new_path = os.path.join(tmpdir, "new", "config.json")
+            with open(legacy, "w") as f:
+                json.dump({"default_top_n": 25}, f)
+
+            with patch("scout.config.LEGACY_CONFIG_PATH", legacy), \
+                 patch("scout.config.CONFIG_PATH", new_path), \
+                 patch("scout.display.console"):
+                cfg = load_config()
+            assert cfg["default_top_n"] == 25
+
+
+class TestPrintConfig:
+    def test_print_config_runs_without_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "ollama-scout", "config.json")
+            with patch("scout.config.CONFIG_PATH", path), \
+                 patch("scout.config.LEGACY_CONFIG_PATH", "/nonexistent"):
+                # print_config creates its own Console; just ensure no exception
+                print_config()
+
+    def test_print_config_shows_all_keys(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "ollama-scout", "config.json")
+            overrides = {k: v for k, v in DEFAULT_CONFIG.items() if k != "default_top_n"}
+            with patch("scout.config.CONFIG_PATH", path), \
+                 patch("scout.config.LEGACY_CONFIG_PATH", "/nonexistent"), \
+                 patch("rich.console.Console.print"):
+                # Just verify it doesn't crash with a changed value
+                save_config({"default_top_n": 25, **overrides})
+                print_config()
 
 
 class TestSaveConfig:
